@@ -40,26 +40,15 @@ export const handler: Handler = async (event) => {
       console.log(message)
     }
 
-    // Launch browser
+    // Launch browser using correct Netlify setup
     addLog('Launching browser...')
     
     let browser
     try {
-      // Set up Chromium for Netlify environment
-      const executablePath = process.env.AWS_REGION 
-        ? await chromium.executablePath()
-        : undefined // Use local Chrome for development
-      
       browser = await puppeteer.launch({
-        args: [
-          ...chromium.args,
-          '--disable-dev-shm-usage',
-          '--disable-setuid-sandbox',
-          '--no-sandbox',
-          '--single-process'
-        ],
+        args: chromium.args,
         defaultViewport: chromium.defaultViewport,
-        executablePath,
+        executablePath: await chromium.executablePath(),
         headless: chromium.headless,
         ignoreHTTPSErrors: true
       })
@@ -94,111 +83,110 @@ export const handler: Handler = async (event) => {
       await page.evaluate(() => {
         const links = Array.from(document.querySelectorAll('a'))
         const okLink = links.find(link => link.textContent?.includes('ตกลง'))
-        if (okLink) (okLink as HTMLElement).click()
+        if (okLink) okLink.click()
       })
       await page.waitForTimeout(3000)
+
+      addLog('Login completed successfully!')
 
       // Handle password change prompt if it appears
       try {
-        const cancelButton = await page.$('a[title="Cancel"]')
+        const cancelButton = await page.$('a[title="Cancel"], a:contains("Cancel")')
         if (cancelButton) {
-          addLog('Dismissing password change prompt...')
           await cancelButton.click()
+          addLog('Password change prompt dismissed')
           await page.waitForTimeout(2000)
         }
-      } catch (e) {
-        addLog('No password change prompt found')
+      } catch {
+        addLog('No password change prompt found, continuing...')
       }
 
       // Navigate to target page
-      addLog('Navigating to target page...')
+      addLog(`Navigating to target page: ${config.targetUrl}`)
       await page.goto(config.targetUrl, { waitUntil: 'networkidle0' })
       await page.waitForTimeout(3000)
 
-      // Select subject
-      addLog('Selecting subject...')
-      await page.evaluate((subjectValue) => {
-        const selects = Array.from(document.querySelectorAll('select'))
-        const subjectSelect = selects.find(select => {
-          const label = select.previousElementSibling?.textContent || ''
-          return label.includes('รายวิชา')
-        })
-        if (subjectSelect) {
-          (subjectSelect as HTMLSelectElement).value = subjectValue
-          subjectSelect.dispatchEvent(new Event('change', { bubbles: true }))
+      // Select subject from dropdown
+      addLog('Selecting subject from dropdown...')
+      await page.evaluate((subjectValue: string) => {
+        const subjectDropdown = document.querySelector('select[name="ctl00$PageContent$SubjectFilter"]')
+        if (subjectDropdown) {
+          subjectDropdown.value = subjectValue
+          subjectDropdown.dispatchEvent(new Event('change'))
         }
       }, config.subjectValue)
+      addLog(`Selected subject with value: ${config.subjectValue}`)
       await page.waitForTimeout(3000)
 
-      // Select group
-      addLog('Selecting group...')
+      // Select group from dropdown
+      addLog('Selecting group from dropdown...')
       await page.select('select[name="ctl00$PageContent$ClassSectionNoFilter"]', config.groupValue)
+      addLog(`Selected group with value: ${config.groupValue}`)
       await page.waitForTimeout(3000)
 
       // Click first input before "หน้า" and type 25
-      addLog('Setting page input to 25...')
+      addLog('Clicking first input before page text and typing 25...')
       await page.evaluate(() => {
-        const inputs = Array.from(document.querySelectorAll('input'))
-        const pageInput = inputs.find(input => {
-          const nextSibling = input.nextElementSibling?.textContent || ''
-          return nextSibling.includes('หน้า')
-        })
-        if (pageInput) {
-          (pageInput as HTMLInputElement).value = '25'
-          pageInput.dispatchEvent(new Event('input', { bubbles: true }))
+        const pageText = Array.from(document.querySelectorAll('*')).find(el => el.textContent?.includes('หน้า'))
+        if (pageText) {
+          const inputs = document.querySelectorAll('input')
+          const firstInput = inputs[inputs.length - 1] // Last input before page text
+          if (firstInput) {
+            firstInput.click()
+            firstInput.value = '25'
+            firstInput.dispatchEvent(new Event('input', { bubbles: true }))
+          }
         }
       })
+      addLog('Typed 25 in first input before page')
       await page.waitForTimeout(500)
 
       // Click "หน้า" button
       addLog('Clicking page button...')
-      await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a'))
-        const pageLink = links.find(link => link.textContent?.includes('หน้า'))
-        if (pageLink) (pageLink as HTMLElement).click()
-      })
+      await page.click('a:has-text("หน้า")')
+      addLog('Clicked page button')
       await page.waitForTimeout(3000)
 
-      // Click checkboxes
-      addLog('Clicking checkboxes...')
-      const checkboxes = await page.$$('input[type="checkbox"]')
+      // Click required checkboxes
+      addLog('Clicking required checkboxes...')
       for (const position of config.checkboxPositions) {
         try {
-          if (checkboxes[position - 1]) {
-            await checkboxes[position - 1].scrollIntoView()
-            await checkboxes[position - 1].click()
-            await page.waitForTimeout(500)
-            addLog(`Clicked checkbox ${position}`)
-          }
+          await page.evaluate((pos: number) => {
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]')
+            if (checkboxes[pos - 1]) {
+              checkboxes[pos - 1].click()
+            }
+          }, position)
+          addLog(`Clicked checkbox ${position}`)
+          await page.waitForTimeout(500)
         } catch (e: any) {
           addLog(`Error clicking checkbox ${position}: ${e.message}`)
         }
       }
 
       // Process students
-      addLog(`Processing ${Object.keys(config.students).length} students...`)
       for (const [studentId, scores] of Object.entries(config.students)) {
-        addLog(`Processing student ${studentId}...`)
-        for (let i = 0; i < config.inputPositions.length && i < scores.length; i++) {
+        addLog(`Processing student ${studentId}`)
+        for (let i = 0; i < config.inputPositions.length; i++) {
+          const pos = config.inputPositions[i]
           try {
-            const pos = config.inputPositions[i]
-            await page.evaluate((sid, score, inputPos) => {
-              const cells = Array.from(document.querySelectorAll('td'))
-              const studentCell = cells.find(cell => cell.textContent?.trim() === sid)
-              if (studentCell) {
-                const row = studentCell.closest('tr')
+            await page.evaluate((studentId: string, score: string, inputPos: number) => {
+              const tds = Array.from(document.querySelectorAll('td'))
+              const studentTd = tds.find(td => td.textContent?.includes(studentId))
+              if (studentTd) {
+                const row = studentTd.closest('tr')
                 if (row) {
-                  const inputs = Array.from(row.querySelectorAll('input'))
+                  const inputs = row.querySelectorAll('input')
                   if (inputs[inputPos - 1]) {
-                    (inputs[inputPos - 1] as HTMLInputElement).value = score
+                    inputs[inputPos - 1].value = score
                     inputs[inputPos - 1].dispatchEvent(new Event('input', { bubbles: true }))
                   }
                 }
               }
-            }, studentId, scores[i], pos)
-            addLog(`  Filled position ${pos} with ${scores[i]}`)
+            }, studentId, scores[i] || '', pos)
+            addLog(`  Filled position ${pos} with ${scores[i] || ''}`)
           } catch (e: any) {
-            addLog(`  Error at position ${config.inputPositions[i]}: ${e.message}`)
+            addLog(`  Error at position ${pos}: ${e.message}`)
           }
         }
         await page.waitForTimeout(1000)
