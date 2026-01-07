@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { Handler } from '@netlify/functions'
-import puppeteer from 'puppeteer-core'
-import chromium from '@sparticuz/chromium'
+import fetch from 'node-fetch'
+import * as cheerio from 'cheerio'
 
 interface ScriptConfig {
   loginUrl: string
@@ -15,8 +15,74 @@ interface ScriptConfig {
   students: { [studentId: string]: string[] }
 }
 
+class FormSession {
+  private cookies: string[] = []
+  private userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
+  async get(url: string): Promise<{ html: string; cookies: string[] }> {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': this.userAgent,
+        'Cookie': this.cookies.join('; ')
+      }
+    })
+
+    const html = await response.text()
+    
+    // Update cookies from response
+    const setCookieHeader = response.headers.get('set-cookie')
+    if (setCookieHeader) {
+      const newCookies = setCookieHeader.split(',').map(c => c.split(';')[0].trim())
+      this.cookies = [...this.cookies, ...newCookies]
+    }
+
+    return { html, cookies: this.cookies }
+  }
+
+  async post(url: string, data: Record<string, string>): Promise<{ html: string; cookies: string[] }> {
+    const formData = new URLSearchParams(data)
+    
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'User-Agent': this.userAgent,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Cookie': this.cookies.join('; '),
+        'Referer': url
+      },
+      body: formData.toString()
+    })
+
+    const html = await response.text()
+    
+    // Update cookies from response
+    const setCookieHeader = response.headers.get('set-cookie')
+    if (setCookieHeader) {
+      const newCookies = setCookieHeader.split(',').map(c => c.split(';')[0].trim())
+      this.cookies = [...this.cookies, ...newCookies]
+    }
+
+    return { html, cookies: this.cookies }
+  }
+
+  extractViewState(html: string): Record<string, string> {
+    const $ = cheerio.load(html)
+    const viewState: Record<string, string> = {}
+    
+    // Extract common ASP.NET view state fields
+    $('input[type="hidden"]').each((_, element) => {
+      const name = $(element).attr('name')
+      const value = $(element).attr('value') || ''
+      if (name && (name.includes('ViewState') || name.includes('EventValidation') || name.includes('ViewState'))) {
+        viewState[name] = value
+      }
+    })
+    
+    return viewState
+  }
+}
+
 export const handler: Handler = async (event) => {
-  // Only allow POST requests
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
@@ -27,7 +93,6 @@ export const handler: Handler = async (event) => {
   try {
     const config: ScriptConfig = JSON.parse(event.body || '{}')
 
-    // Validate config
     if (!config.loginUrl || !config.username || !config.password) {
       return {
         statusCode: 400,
@@ -41,182 +106,123 @@ export const handler: Handler = async (event) => {
       console.log(message)
     }
 
-    // Launch browser using correct Netlify setup
-    addLog('Launching browser...')
-    
-    let browser
-    try {
-      browser = await puppeteer.launch({
-        args: chromium.args,
-        defaultViewport: chromium.defaultViewport,
-        executablePath: await chromium.executablePath(),
-        headless: chromium.headless,
-        ignoreHTTPSErrors: true
-      })
-      addLog('Browser launched successfully')
-
-    } catch (browserError: any) {
-      addLog(`Failed to launch browser: ${browserError.message}`)
-      return {
-        statusCode: 500,
-        body: JSON.stringify({
-          success: false,
-          error: `Browser launch failed: ${browserError.message}`,
-          logs
-        })
-      }
-    }
-
-    const page = await browser.newPage()
+    const session = new FormSession()
 
     try {
-      // Login
-      addLog('Navigating to login page...')
-      await page.goto(config.loginUrl, { waitUntil: 'networkidle0' })
-      await page.waitForTimeout(3000)
+      // Step 1: Get login page and extract form data
+      addLog('Fetching login page...')
+      const loginPage = await session.get(config.loginUrl)
+      const loginViewState = session.extractViewState(loginPage.html)
+      addLog('Login page fetched and view state extracted')
 
-      addLog('Filling login credentials...')
-      await page.type('input[name="ctl00$PageContent$UserName"]', config.username)
-      await page.type('input[name="ctl00$PageContent$Password"]', config.password)
-      await page.waitForTimeout(1000)
-
-      addLog('Clicking login button...')
-      await page.evaluate(() => {
-        const links = Array.from(document.querySelectorAll('a'))
-        const okLink = links.find(link => link.textContent?.includes('ตกลง'))
-        if (okLink) okLink.click()
-      })
-      await page.waitForTimeout(3000)
-
-      addLog('Login completed successfully!')
-
-      // Handle password change prompt if it appears
-      try {
-        const cancelButton = await page.$('a[title="Cancel"], a:contains("Cancel")')
-        if (cancelButton) {
-          await cancelButton.click()
-          addLog('Password change prompt dismissed')
-          await page.waitForTimeout(2000)
-        }
-      } catch {
-        addLog('No password change prompt found, continuing...')
+      // Step 2: Submit login form
+      addLog('Submitting login credentials...')
+      const loginData = {
+        'ctl00$PageContent$UserName': config.username,
+        'ctl00$PageContent$Password': config.password,
+        ...loginViewState
       }
 
-      // Navigate to target page
+      const loginResponse = await session.post(config.loginUrl, loginData)
+      addLog('Login submitted successfully')
+
+      // Step 3: Navigate to target page
       addLog(`Navigating to target page: ${config.targetUrl}`)
-      await page.goto(config.targetUrl, { waitUntil: 'networkidle0' })
-      await page.waitForTimeout(3000)
+      const targetPage = await session.get(config.targetUrl)
+      const targetViewState = session.extractViewState(targetPage.html)
+      addLog('Target page loaded')
 
-      // Select subject from dropdown
-      addLog('Selecting subject from dropdown...')
-      await page.evaluate((subjectValue: string) => {
-        const subjectDropdown = document.querySelector('select[name="ctl00$PageContent$SubjectFilter"]') as HTMLSelectElement
-        if (subjectDropdown) {
-          subjectDropdown.value = subjectValue
-          subjectDropdown.dispatchEvent(new Event('change'))
-        }
-      }, config.subjectValue)
-      addLog(`Selected subject with value: ${config.subjectValue}`)
-      await page.waitForTimeout(3000)
-
-      // Select group from dropdown
-      addLog('Selecting group from dropdown...')
-      await page.select('select[name="ctl00$PageContent$ClassSectionNoFilter"]', config.groupValue)
-      addLog(`Selected group with value: ${config.groupValue}`)
-      await page.waitForTimeout(3000)
-
-      // Click first input before "หน้า" and type 25
-      addLog('Clicking first input before page text and typing 25...')
-      await page.evaluate(() => {
-        const pageText = Array.from(document.querySelectorAll('*')).find(el => el.textContent?.includes('หน้า'))
-        if (pageText) {
-          const inputs = document.querySelectorAll('input')
-          const firstInput = inputs[inputs.length - 1] as HTMLInputElement
-          if (firstInput) {
-            firstInput.click()
-            firstInput.value = '25'
-            firstInput.dispatchEvent(new Event('input', { bubbles: true }))
-          }
-        }
-      })
-      addLog('Typed 25 in first input before page')
-      await page.waitForTimeout(500)
-
-      // Click "หน้า" button
-      addLog('Clicking page button...')
-      await page.click('a:has-text("หน้า")')
-      addLog('Clicked page button')
-      await page.waitForTimeout(3000)
-
-      // Click required checkboxes
-      addLog('Clicking required checkboxes...')
-      for (const position of config.checkboxPositions) {
-        try {
-          await page.evaluate((pos: number) => {
-            const checkboxes = document.querySelectorAll('input[type="checkbox"]')
-            if (checkboxes[pos - 1]) {
-              (checkboxes[pos - 1] as HTMLInputElement).click()
-            }
-          }, position)
-          addLog(`Clicked checkbox ${position}`)
-          await page.waitForTimeout(500)
-        } catch (e: any) {
-          addLog(`Error clicking checkbox ${position}: ${e.message}`)
-        }
+      // Step 4: Select subject
+      addLog('Selecting subject...')
+      const subjectData = {
+        'ctl00$PageContent$SubjectFilter': config.subjectValue,
+        ...targetViewState
       }
+      await session.post(config.targetUrl, subjectData)
+      addLog(`Subject selected: ${config.subjectValue}`)
 
-      // Process students
+      // Step 5: Select group
+      addLog('Selecting group...')
+      const groupData = {
+        'ctl00$PageContent$ClassSectionNoFilter': config.groupValue,
+        ...targetViewState
+      }
+      await session.post(config.targetUrl, groupData)
+      addLog(`Group selected: ${config.groupValue}`)
+
+      // Step 6: Set page size and navigate
+      addLog('Setting page size to 25...')
+      const pageData = {
+        ...targetViewState,
+        // Find the input before "หน้า" text and set to 25
+        'ctl00$PageContent$PageSize': '25'
+      }
+      await session.post(config.targetUrl, pageData)
+      addLog('Page size set to 25')
+
+      // Step 7: Click page button (if needed)
+      addLog('Navigating to specific page...')
+      const pageNavData = {
+        ...targetViewState,
+        'ctl00$PageContent$Pager$ctl00$PageContent$PagerButton': 'หน้า'
+      }
+      await session.post(config.targetUrl, pageNavData)
+      addLog('Page navigation completed')
+
+      // Step 8: Check checkboxes
+      addLog('Checking required checkboxes...')
+      const checkboxData = {
+        ...targetViewState
+      }
+      
+      // Add checkbox selections based on positions
+      config.checkboxPositions.forEach((position, index) => {
+        checkboxData[`ctl00$PageContent$gvStudents$ctl${index + 2}$CheckBoxSelect`] = 'on'
+      })
+      
+      await session.post(config.targetUrl, checkboxData)
+      addLog(`${config.checkboxPositions.length} checkboxes checked`)
+
+      // Step 9: Process students
+      addLog('Processing student grades...')
       for (const [studentId, scores] of Object.entries(config.students)) {
         addLog(`Processing student ${studentId}`)
-        for (let i = 0; i < config.inputPositions.length; i++) {
-          const pos = config.inputPositions[i]
-          try {
-            await page.evaluate((studentId: string, score: string, inputPos: number) => {
-              const tds = Array.from(document.querySelectorAll('td'))
-              const studentTd = tds.find(td => td.textContent?.includes(studentId))
-              if (studentTd) {
-                const row = studentTd.closest('tr')
-                if (row) {
-                  const inputs = row.querySelectorAll('input')
-                  if (inputs[inputPos - 1]) {
-                    const input = inputs[inputPos - 1] as HTMLInputElement
-                    input.value = score
-                    input.dispatchEvent(new Event('input', { bubbles: true }))
-                  }
-                }
-              }
-            }, studentId, scores[i] || '', pos)
-            addLog(`  Filled position ${pos} with ${scores[i] || ''}`)
-          } catch (e: any) {
-            addLog(`  Error at position ${pos}: ${e.message}`)
-          }
+        
+        const studentData = {
+          ...targetViewState
         }
-        await page.waitForTimeout(1000)
+        
+        // Add score inputs based on positions
+        config.inputPositions.forEach((position, index) => {
+          const score = scores[index] || ''
+          // Find the input for this student and position
+          studentData[`ctl00$PageContent$gvStudents$ctl${position + 1}$txtScore`] = score
+        })
+        
+        await session.post(config.targetUrl, studentData)
+        addLog(`  Student ${studentId} processed`)
       }
 
-      // Save transcripts
-      addLog('Saving transcripts...')
-      const saveButton = await page.$('#ctl00_PageContent_TblTranscriptsSaveButton')
-      if (saveButton) {
-        await saveButton.scrollIntoView()
-        await saveButton.click()
-        await page.waitForTimeout(5000)
+      // Step 10: Save all changes
+      addLog('Saving all transcript changes...')
+      const saveData = {
+        ...targetViewState,
+        'ctl00$PageContent$TblTranscriptsSaveButton': 'Save'
       }
-
-      addLog('All students processed and saved successfully!')
-
-      await browser.close()
+      
+      await session.post(config.targetUrl, saveData)
+      addLog('All changes saved successfully!')
 
       return {
         statusCode: 200,
         body: JSON.stringify({
           success: true,
-          message: 'Script executed successfully',
+          message: 'Script executed successfully using HTTP form submission',
           logs
         })
       }
+
     } catch (error: any) {
-      await browser.close()
       addLog(`Error: ${error.message}`)
       return {
         statusCode: 500,
@@ -227,6 +233,7 @@ export const handler: Handler = async (event) => {
         })
       }
     }
+
   } catch (error: any) {
     return {
       statusCode: 500,
