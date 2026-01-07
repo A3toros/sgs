@@ -4,6 +4,7 @@
 
 [build.environment]
   NODE_VERSION = "18"
+  NETLIFY_DEV_USE_PUPPETEER = "true"
 
 [functions]
   directory = "netlify/functions"
