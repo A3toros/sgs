@@ -42,13 +42,40 @@ export const handler: Handler = async (event) => {
 
     // Launch browser
     addLog('Launching browser...')
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      defaultViewport: chromium.defaultViewport,
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-      ignoreHTTPSErrors: true
-    })
+    
+    let browser
+    try {
+      // Set up Chromium for Netlify environment
+      const executablePath = process.env.AWS_REGION 
+        ? await chromium.executablePath()
+        : undefined // Use local Chrome for development
+      
+      browser = await puppeteer.launch({
+        args: [
+          ...chromium.args,
+          '--disable-dev-shm-usage',
+          '--disable-setuid-sandbox',
+          '--no-sandbox',
+          '--single-process'
+        ],
+        defaultViewport: chromium.defaultViewport,
+        executablePath,
+        headless: chromium.headless,
+        ignoreHTTPSErrors: true
+      })
+      addLog('Browser launched successfully')
+
+    } catch (browserError: any) {
+      addLog(`Failed to launch browser: ${browserError.message}`)
+      return {
+        statusCode: 500,
+        body: JSON.stringify({
+          success: false,
+          error: `Browser launch failed: ${browserError.message}`,
+          logs
+        })
+      }
+    }
 
     const page = await browser.newPage()
 
