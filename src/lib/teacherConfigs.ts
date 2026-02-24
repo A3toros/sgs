@@ -78,6 +78,28 @@ export const GROUP_OPTIONS: SelectOption[] = [
   { value: '14', label: 'Group 14 (M4, M5, M6 only)' }
 ]
 
+export type TranscriptMode = 'midterm' | 'finals'
+
+const BASE_SGS_URL = 'https://sgs.bopp-obec.info/sgs'
+
+export const MODE_OPTIONS: SelectOption[] = [
+  { value: 'midterm', label: 'Midterm' },
+  { value: 'finals', label: 'Finals' }
+]
+
+export const MODE_CONFIG: Record<TranscriptMode, { targetUrl: string; inputPositions: number[]; checkboxPositions: number[] }> = {
+  midterm: {
+    targetUrl: `${BASE_SGS_URL}/TblTranscripts/Edit-TblTranscripts1-Table.aspx`,
+    inputPositions: [1, 11],
+    checkboxPositions: [1, 10]
+  },
+  finals: {
+    targetUrl: `${BASE_SGS_URL}/TblTranscripts/Edit-TblTranscripts-Table.aspx`,
+    inputPositions: [5, 6, 8],
+    checkboxPositions: [5, 6, 8]
+  }
+}
+
 export function getTeacherConfig(teacherId: string): TeacherConfig | undefined {
   return TEACHER_CONFIGS.find(config => config.id === teacherId)
 }

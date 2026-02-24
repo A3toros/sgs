@@ -1,12 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { TEACHER_CONFIGS, GROUP_OPTIONS, getTeacherConfig, updateTeacherConfig, getSubjectOptionsForTeacher } from '@/lib/teacherConfigs'
+import { TEACHER_CONFIGS, GROUP_OPTIONS, MODE_OPTIONS, MODE_CONFIG, getTeacherConfig, updateTeacherConfig, getSubjectOptionsForTeacher } from '@/lib/teacherConfigs'
+import type { TranscriptMode } from '@/lib/teacherConfigs'
 import { TeacherConfig, StudentData } from '@/types'
 import { Button, Card, Input, Textarea, Select } from '@/components/ui'
 
 export default function TeacherConfigPage() {
   const [selectedTeacher, setSelectedTeacher] = useState<string>('alex')
+  const [mode, setMode] = useState<TranscriptMode>('midterm')
   const [config, setConfig] = useState<TeacherConfig | null>(null)
   const [generatedScript, setGeneratedScript] = useState<string>('')
   const [isRunning, setIsRunning] = useState<boolean>(false)
@@ -22,26 +24,49 @@ export default function TeacherConfigPage() {
     { position: 20, enabled: false }
   ])
 
-  // Load teacher config when teacher changes
+  // Apply mode config (targetUrl + positions) to current teacher config and local state
+  const applyMode = (newMode: TranscriptMode) => {
+    const modeConf = MODE_CONFIG[newMode]
+    setConfig(prev => {
+      if (!prev) return prev
+      const updated = { ...prev, targetUrl: modeConf.targetUrl, inputPositions: modeConf.inputPositions, checkboxPositions: modeConf.checkboxPositions }
+      updateTeacherConfig(selectedTeacher, { targetUrl: modeConf.targetUrl, inputPositions: modeConf.inputPositions, checkboxPositions: modeConf.checkboxPositions })
+      return updated
+    })
+    if (newMode === 'midterm') {
+      setInputPositions([{ position: 1, enabled: true }, { position: 11, enabled: true }, { position: 15, enabled: false }])
+      setCheckboxPositions([{ position: 1, enabled: true }, { position: 10, enabled: true }, { position: 20, enabled: false }])
+    } else {
+      setInputPositions(modeConf.inputPositions.map((position) => ({ position, enabled: true })))
+      setCheckboxPositions(modeConf.checkboxPositions.map((position) => ({ position, enabled: true })))
+    }
+  }
+
+  // Load teacher config when teacher changes; detect mode from targetUrl and set positions
   useEffect(() => {
     const teacherConfig = getTeacherConfig(selectedTeacher)
     if (teacherConfig) {
       setConfig(teacherConfig)
-
-      // Update position configurations
-      setInputPositions([
-        { position: teacherConfig.inputPositions[0] || 1, enabled: teacherConfig.inputPositions.includes(1) },
-        { position: teacherConfig.inputPositions[1] || 11, enabled: teacherConfig.inputPositions.includes(11) },
-        { position: teacherConfig.inputPositions[2] || 15, enabled: teacherConfig.inputPositions.includes(15) }
-      ])
-
-      setCheckboxPositions([
-        { position: teacherConfig.checkboxPositions[0] || 1, enabled: teacherConfig.checkboxPositions.includes(1) },
-        { position: teacherConfig.checkboxPositions[1] || 10, enabled: teacherConfig.checkboxPositions.includes(10) },
-        { position: teacherConfig.checkboxPositions[2] || 20, enabled: teacherConfig.checkboxPositions.includes(20) }
-      ])
+      const isFinals = teacherConfig.targetUrl.includes('Edit-TblTranscripts-Table.aspx') && !teacherConfig.targetUrl.includes('Edit-TblTranscripts1-Table')
+      const newMode: TranscriptMode = isFinals ? 'finals' : 'midterm'
+      setMode(newMode)
+      if (newMode === 'midterm') {
+        setInputPositions([{ position: 1, enabled: true }, { position: 11, enabled: true }, { position: 15, enabled: false }])
+        setCheckboxPositions([{ position: 1, enabled: true }, { position: 10, enabled: true }, { position: 20, enabled: false }])
+      } else {
+        const modeConf = MODE_CONFIG[newMode]
+        setInputPositions(modeConf.inputPositions.map((position) => ({ position, enabled: true })))
+        setCheckboxPositions(modeConf.checkboxPositions.map((position) => ({ position, enabled: true })))
+      }
     }
   }, [selectedTeacher])
+
+  // When mode dropdown changes, apply that mode's config
+  const handleModeChange = (value: string) => {
+    const newMode = value as TranscriptMode
+    setMode(newMode)
+    applyMode(newMode)
+  }
 
   const handleConfigChange = (field: keyof TeacherConfig, value: string) => {
     if (!config) return
@@ -398,13 +423,25 @@ finally:
         students: config.students
       }
 
-      const response = await fetch('/.netlify/functions/run-script', {
+      // Use Next.js API route for local development, Netlify function for production
+      const apiUrl = process.env.NODE_ENV === 'development'
+        ? '/api/run-script'
+        : '/.netlify/functions/run-script'
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify(scriptConfig)
       })
+
+      // Check if response is valid JSON
+      const contentType = response.headers.get('content-type')
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text()
+        throw new Error(`Expected JSON response but got: ${text.substring(0, 100)}`)
+      }
 
       const result = await response.json()
 
@@ -416,8 +453,20 @@ finally:
         alert(`❌ Error: ${result.error || 'Script execution failed'}`)
       }
     } catch (error: any) {
-      setExecutionLogs([`Error: ${error.message}`])
-      alert(`❌ Failed to execute script: ${error.message}`)
+      let errorMessage = error.message
+      
+      // Provide more helpful error messages
+      if (error.message.includes('Failed to fetch')) {
+        errorMessage = 'Failed to connect to the server. Please make sure:' +
+          '\n1. Netlify functions server is running (run "netlify dev" in a separate terminal)' +
+          '\n2. You are using the correct URL in the configuration' +
+          '\n3. No firewall is blocking the connection to localhost:9999'
+      } else if (error.message.includes('NetworkError')) {
+        errorMessage = 'Network error. Please check your internet connection and ensure the Netlify functions server is running.'
+      }
+      
+      setExecutionLogs([`Error: ${errorMessage}`])
+      alert(`❌ Failed to execute script: ${errorMessage}`)
     } finally {
       setIsRunning(false)
     }
@@ -435,18 +484,30 @@ finally:
           <p className="text-gray-600">Configure and generate Python scripts for teacher data entry</p>
         </div>
 
-        {/* Teacher Selection */}
+        {/* Teacher & Mode Selection */}
         <Card className="mb-6">
           <Card.Body>
-            <h3 className="text-lg font-semibold mb-4">👥 Select Teacher</h3>
-            <Select
-              value={selectedTeacher}
-              onChange={(value) => setSelectedTeacher(value)}
-              options={TEACHER_CONFIGS.map(teacher => ({
-                value: teacher.id,
-                label: teacher.name
-              }))}
-            />
+            <h3 className="text-lg font-semibold mb-4">👥 Select Teacher & Mode</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select
+                label="Teacher"
+                value={selectedTeacher}
+                onChange={(value) => setSelectedTeacher(value)}
+                options={TEACHER_CONFIGS.map(teacher => ({
+                  value: teacher.id,
+                  label: teacher.name
+                }))}
+              />
+              <Select
+                label="Mode"
+                value={mode}
+                onChange={handleModeChange}
+                options={MODE_OPTIONS}
+              />
+            </div>
+            <p className="text-sm text-gray-500 mt-2">
+              {mode === 'midterm' ? 'Midterm: target Edit-TblTranscripts1, inputs 1 & 11, checkboxes 1 & 10.' : 'Finals: target Edit-TblTranscripts (no "1"), inputs and checkboxes 5, 6, 8.'}
+            </p>
           </Card.Body>
         </Card>
 

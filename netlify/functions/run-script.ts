@@ -2,6 +2,8 @@ import { Handler } from '@netlify/functions'
 import puppeteer from 'puppeteer-core'
 import chromium from '@sparticuz/chromium'
 
+// Ensure the function returns proper JSON headers
+
 interface ScriptConfig {
   loginUrl: string
   targetUrl: string
@@ -19,6 +21,12 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod !== 'POST') {
     return {
       statusCode: 405,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      } as Record<string, string>,
       body: JSON.stringify({ error: 'Method not allowed' })
     }
   }
@@ -30,6 +38,12 @@ export const handler: Handler = async (event) => {
     if (!config.loginUrl || !config.username || !config.password) {
       return {
         statusCode: 400,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        } as Record<string, string>,
         body: JSON.stringify({ error: 'Missing required configuration' })
       }
     }
@@ -69,6 +83,12 @@ export const handler: Handler = async (event) => {
       addLog(`Failed to launch browser: ${browserError.message}`)
       return {
         statusCode: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        } as Record<string, string>,
         body: JSON.stringify({
           success: false,
           error: `Browser launch failed: ${browserError.message}`,
@@ -219,6 +239,12 @@ export const handler: Handler = async (event) => {
 
       return {
         statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        } as Record<string, string>,
         body: JSON.stringify({
           success: true,
           message: 'Script executed successfully',
@@ -230,6 +256,12 @@ export const handler: Handler = async (event) => {
       addLog(`Error: ${error.message}`)
       return {
         statusCode: 500,
+        headers: {
+          'Content-Type': 'application/json',
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'POST, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type'
+        } as Record<string, string>,
         body: JSON.stringify({
           success: false,
           error: error.message,
@@ -240,6 +272,12 @@ export const handler: Handler = async (event) => {
   } catch (error: any) {
     return {
       statusCode: 500,
+      headers: {
+        'Content-Type': 'application/json',
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type'
+      } as Record<string, string>,
       body: JSON.stringify({
         success: false,
         error: error.message

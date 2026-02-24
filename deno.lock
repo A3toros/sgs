@@ -11,14 +11,21 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@netlify/functions@^2.4.0",
+        "npm:@sparticuz/chromium@119",
         "npm:@types/node@20",
         "npm:@types/react-dom@^18.2.0",
         "npm:@types/react@^18.2.0",
         "npm:autoprefixer@^10.4.0",
+        "npm:cors@^2.8.5",
         "npm:eslint-config-next@^14.0.4",
         "npm:eslint@8",
+        "npm:express@^4.22.1",
         "npm:next@14.0.4",
+        "npm:npm-run-all@^4.1.5",
+        "npm:playwright-core@^1.40.0",
         "npm:postcss@^8.4.0",
+        "npm:puppeteer-core@^21.5.0",
         "npm:react-dom@^18.2.0",
         "npm:react@^18.2.0",
         "npm:tailwindcss@^3.3.0",
