@@ -2,6 +2,9 @@
   "name": "teacher-config-app",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "next dev",
     "dev:all": "run-p dev \"netlify dev\"",

@@ -1,3 +1,4 @@
+import './lib/nodePolyfills'
 import { Handler } from '@netlify/functions'
 import * as cheerio from 'cheerio'
 import {

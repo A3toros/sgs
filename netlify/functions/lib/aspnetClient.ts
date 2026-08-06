@@ -1,3 +1,4 @@
+import './nodePolyfills'
 import * as cheerio from 'cheerio'
 import { CookieJar } from 'tough-cookie'
 
