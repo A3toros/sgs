@@ -9,6 +9,7 @@ import { Button, Card, Input, Textarea, Select } from '@/components/ui'
 export default function TeacherConfigPage() {
   const [selectedTeacher, setSelectedTeacher] = useState<string>('alex')
   const [mode, setMode] = useState<TranscriptMode>('midterm')
+  const [runner, setRunner] = useState<'http' | 'browser'>('http')
   const [config, setConfig] = useState<TeacherConfig | null>(null)
   const [generatedScript, setGeneratedScript] = useState<string>('')
   const [isRunning, setIsRunning] = useState<boolean>(false)
@@ -271,8 +272,11 @@ finally:
         students: config.students
       }
 
-      // Always use Netlify function (netlify dev proxies this locally; same path in production)
-      const apiUrl = '/.netlify/functions/run-script'
+      // HTTP = ASP.NET direct (default); Browser = Puppeteer
+      const apiUrl =
+        runner === 'http'
+          ? '/.netlify/functions/run-script-http'
+          : '/.netlify/functions/run-script'
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -331,7 +335,7 @@ finally:
         <Card className="mb-6">
           <Card.Body>
             <h3 className="text-lg font-semibold mb-4">👥 Select Teacher & Mode</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Select
                 label="Teacher"
                 value={selectedTeacher}
@@ -347,11 +351,24 @@ finally:
                 onChange={handleModeChange}
                 options={MODE_OPTIONS}
               />
+              <Select
+                label="Runner"
+                value={runner}
+                onChange={(value) => setRunner(value as 'http' | 'browser')}
+                options={[
+                  { value: 'http', label: 'HTTP (ASP.NET)' },
+                  { value: 'browser', label: 'Browser (Puppeteer)' }
+                ]}
+              />
             </div>
             <p className="text-sm text-gray-500 mt-2">
               {mode === 'midterm'
                 ? 'Midterm: Edit-TblTranscripts1 — check & fill S1 (30) and Midterm/กลางภาค (20).'
                 : 'Finals: Edit-TblTranscripts — check & fill S10 (20), S11 (10), and Final/ปลายภาค (20).'}
+              {' '}
+              {runner === 'http'
+                ? 'Run uses direct HTTP (no Chromium).'
+                : 'Run uses Puppeteer/Chromium (local debugging).'}
             </p>
           </Card.Body>
         </Card>

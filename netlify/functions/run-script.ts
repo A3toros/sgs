@@ -53,13 +53,31 @@ function checkFieldName(col: ScoreColumnPayload): string {
 async function waitForPostback(page: Page, addLog: (m: string) => void, ms = 2000): Promise<void> {
   try {
     await Promise.race([
-      page.waitForNavigation({ waitUntil: 'networkidle0', timeout: ms + 3000 }).catch(() => null),
+      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: ms + 3000 }).catch(() => null),
       page.waitForTimeout(ms)
     ])
   } catch {
     await page.waitForTimeout(800)
   }
   addLog(`Postback wait done. URL: ${page.url()}`)
+}
+
+async function gotoWithRetries(page: Page, url: string, addLog: (m: string) => void, attempts = 3): Promise<void> {
+  let lastError: unknown
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      addLog(`goto ${url} (attempt ${i}/${attempts})`)
+      // domcontentloaded is more reliable than networkidle0 on flaky school sites
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 })
+      await page.waitForTimeout(800)
+      return
+    } catch (e) {
+      lastError = e
+      addLog(`goto failed attempt ${i}: ${(e as Error).message}`)
+      await page.waitForTimeout(1000 * i)
+    }
+  }
+  throw lastError
 }
 
 async function clickOkLogin(page: Page, addLog: (m: string) => void): Promise<void> {
@@ -381,7 +399,14 @@ export const handler: Handler = async (event) => {
 
       browser = await puppeteer.launch({
         args: isLambda
-          ? [...chromium.args, '--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox']
+          ? [
+              ...chromium.args,
+              '--disable-dev-shm-usage',
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--ignore-certificate-errors',
+              '--disable-features=IsolateOrigins,site-per-process'
+            ]
           : ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
         defaultViewport: isLambda ? chromium.defaultViewport : { width: 1280, height: 800 },
         executablePath,
@@ -392,10 +417,28 @@ export const handler: Handler = async (event) => {
 
       const page = await browser.newPage()
       page.setDefaultTimeout(20000)
+      await page.setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      )
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7'
+      })
 
       // --- Login ---
       addLog('Navigating to login page...')
-      await page.goto(config.loginUrl, { waitUntil: 'networkidle0', timeout: 30000 })
+      try {
+        await gotoWithRetries(page, config.loginUrl, addLog)
+      } catch (navErr: any) {
+        const msg = String(navErr?.message || navErr)
+        if (msg.includes('ERR_EMPTY_RESPONSE') || msg.includes('ERR_CONNECTION') || msg.includes('ERR_TIMED_OUT')) {
+          throw new Error(
+            `${msg}. SGS often blocks Netlify/AWS cloud IPs. ` +
+              `The site works from home/school networks but may refuse serverless hosts. ` +
+              `Try "netlify dev" locally (uses your IP), or we need HTTP automation / a Thai/residential proxy host for true phone-online Run.`
+          )
+        }
+        throw navErr
+      }
       await page.waitForSelector('input[name="ctl00$PageContent$UserName"]', { timeout: 15000 })
 
       addLog('Filling login credentials...')
@@ -410,7 +453,7 @@ export const handler: Handler = async (event) => {
 
       // --- Transcripts page ---
       addLog(`Navigating to target page: ${config.targetUrl}`)
-      await page.goto(config.targetUrl, { waitUntil: 'networkidle0', timeout: 30000 })
+      await gotoWithRetries(page, config.targetUrl, addLog)
 
       addLog('Selecting subject...')
       await selectSubject(page, config.subjectValue, addLog)
