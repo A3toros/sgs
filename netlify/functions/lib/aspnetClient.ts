@@ -180,9 +180,11 @@ export function extractAllFormFields(html: string): FormFields {
   const fields: FormFields = {}
 
   const form = $('form').first()
-  const root = form.length ? form : $.root()
+  const inputs = form.length ? form.find('input') : $('input')
+  const selects = form.length ? form.find('select') : $('select')
+  const textareas = form.length ? form.find('textarea') : $('textarea')
 
-  root.find('input').each((_, el) => {
+  inputs.each((_, el) => {
     const name = $(el).attr('name')
     if (!name) return
     const type = ($(el).attr('type') || 'text').toLowerCase()
@@ -196,7 +198,7 @@ export function extractAllFormFields(html: string): FormFields {
     fields[name] = $(el).attr('value') ?? ''
   })
 
-  root.find('select').each((_, el) => {
+  selects.each((_, el) => {
     const name = $(el).attr('name')
     if (!name) return
     const selected = $(el).find('option[selected]').attr('value')
@@ -204,7 +206,7 @@ export function extractAllFormFields(html: string): FormFields {
     fields[name] = selected ?? first ?? ''
   })
 
-  root.find('textarea').each((_, el) => {
+  textareas.each((_, el) => {
     const name = $(el).attr('name')
     if (!name) return
     fields[name] = $(el).text() ?? ''
