@@ -361,7 +361,8 @@ export const handler: Handler = async (event) => {
 
       let executablePath: string | undefined
       if (isLambda) {
-        chromium.setGraphicsMode(false)
+        // Disable graphics stack (property on @sparticuz/chromium v119, not a method)
+        ;(chromium as { setGraphicsMode?: boolean }).setGraphicsMode = false
         // esbuild must leave @sparticuz/chromium external (see netlify.toml)
         executablePath = await chromium.executablePath(
           '/var/task/node_modules/@sparticuz/chromium/bin'
