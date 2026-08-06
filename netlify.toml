@@ -8,6 +8,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # Keep chromium binaries on disk — bundling breaks @sparticuz/chromium path resolution
+  external_node_modules = ["@sparticuz/chromium", "puppeteer-core"]
 
 [functions."run-script"]
   timeout = 26

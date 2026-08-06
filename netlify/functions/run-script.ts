@@ -356,19 +356,35 @@ export const handler: Handler = async (event) => {
 
     try {
       addLog('Launching browser...')
-      const isNetlify = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.NETLIFY || process.env.AWS_REGION)
-      const executablePath = isNetlify
-        ? await chromium.executablePath()
-        : process.env.CHROME_PATH ||
+      // Only production Lambda has /var/task. Local `netlify dev` sets NETLIFY=true but uses host Chrome.
+      const isLambda = !!(process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT)
+
+      let executablePath: string | undefined
+      if (isLambda) {
+        chromium.setGraphicsMode(false)
+        // esbuild must leave @sparticuz/chromium external (see netlify.toml)
+        executablePath = await chromium.executablePath(
+          '/var/task/node_modules/@sparticuz/chromium/bin'
+        )
+        addLog(`Chromium path: ${executablePath}`)
+      } else {
+        executablePath =
+          process.env.CHROME_PATH ||
           (process.platform === 'win32'
             ? 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
-            : undefined)
+            : process.platform === 'darwin'
+              ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'
+              : undefined)
+        addLog(`Local Chrome path: ${executablePath || 'default'}`)
+      }
 
       browser = await puppeteer.launch({
-        args: [...chromium.args, '--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
-        defaultViewport: chromium.defaultViewport,
+        args: isLambda
+          ? [...chromium.args, '--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox']
+          : ['--disable-dev-shm-usage', '--no-sandbox', '--disable-setuid-sandbox'],
+        defaultViewport: isLambda ? chromium.defaultViewport : { width: 1280, height: 800 },
         executablePath,
-        headless: chromium.headless ?? true,
+        headless: true,
         ignoreHTTPSErrors: true
       })
       addLog('Browser launched successfully')
