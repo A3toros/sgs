@@ -271,10 +271,8 @@ finally:
         students: config.students
       }
 
-      // Use Next.js API route for local development, Netlify function for production
-      const apiUrl = process.env.NODE_ENV === 'development'
-        ? '/api/run-script'
-        : '/.netlify/functions/run-script'
+      // Always use Netlify function (netlify dev proxies this locally; same path in production)
+      const apiUrl = '/.netlify/functions/run-script'
 
       const response = await fetch(apiUrl, {
         method: 'POST',
@@ -305,12 +303,9 @@ finally:
       
       // Provide more helpful error messages
       if (error.message.includes('Failed to fetch')) {
-        errorMessage = 'Failed to connect to the server. Please make sure:' +
-          '\n1. Netlify functions server is running (run "netlify dev" in a separate terminal)' +
-          '\n2. You are using the correct URL in the configuration' +
-          '\n3. No firewall is blocking the connection to localhost:9999'
+        errorMessage = 'Failed to connect to the Netlify function. Run "netlify dev" and open http://localhost:8888 (not :3000 alone).'
       } else if (error.message.includes('NetworkError')) {
-        errorMessage = 'Network error. Please check your internet connection and ensure the Netlify functions server is running.'
+        errorMessage = 'Network error. Ensure netlify dev is running and you are on the proxy URL (port 8888).'
       }
       
       setExecutionLogs([`Error: ${errorMessage}`])

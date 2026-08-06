@@ -9,5 +9,8 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
+[functions."run-script"]
+  timeout = 26
+
 # Do not add redirects for /.netlify/* — Netlify serves functions automatically.
 # Next.js handles its own routing under netlify dev / the Next plugin.

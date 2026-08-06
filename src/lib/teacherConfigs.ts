@@ -12,31 +12,7 @@ export const TEACHER_CONFIGS: TeacherConfig[] = [
     groupValue: '15',
     inputPositions: [1],
     checkboxPositions: [1],
-    students: {
-      "51706": ["24", "5"],
-      "51707": ["25", "6"],
-      "51708": ["12", "6"],
-      "51709": ["26", "8"],
-      "51710": ["25", "10"],
-      "51711": ["23", "8"],
-      "51712": ["13", "6"],
-      "51713": ["10", "7"],
-      "51714": ["9", "5"],
-      "51715": ["11", "7"],
-      "51716": ["13", "7"],
-      "51717": ["24", "9"],
-      "51718": ["25", "6"],
-      "51719": ["11", "6"],
-      "51720": ["23", "9"],
-      "51721": ["16", "8"],
-      "51722": ["7", "10"],
-      "51723": ["15", "4"],
-      "51724": ["13", "9"],
-      "51725": ["30", "10"],
-      "51726": ["21", "8"],
-      "51727": ["30", "10"],
-      "51728": ["27", "10"]
-    }
+    students: {}
   },
   {
     id: 'jay',
@@ -45,7 +21,7 @@ export const TEACHER_CONFIGS: TeacherConfig[] = [
     targetUrl: 'https://sgs.bopp-obec.info/sgs/TblTranscripts/Edit-TblTranscripts1-Table.aspx',
     username: '1010335002956',
     password: 'Pavel1no24',
-    subjectValue: '8735440',
+    subjectValue: '9175029',
     groupValue: '15',
     inputPositions: [1],
     checkboxPositions: [1],
@@ -64,12 +40,12 @@ export const ALEX_SUBJECTS: SelectOption[] = [
 ]
 
 export const JAY_SUBJECTS: SelectOption[] = [
-  { value: '8735440', label: 'Supplementary Mathematics 2 M.1' },
-  { value: '8745567', label: 'ค22232 M.2' },
-  { value: '8736092', label: 'Supplementary Mathematics 6 M.3' },
-  { value: '8736658', label: 'ค31132 M.4' },
-  { value: '8745552', label: 'ค32234 M.5' },
-  { value: '8737248', label: 'ค30206 M.6' }
+  { value: '9175029', label: 'M1 Supplementary Mathematics 2 (ค21231)' },
+  { value: '9175572', label: 'M2 (ค22231)' },
+  { value: '9175910', label: 'M3 (ค23231)' },
+  { value: '9179120', label: 'M4 (ค31131)' },
+  { value: '9179173', label: 'M5 (ค32233)' },
+  { value: '9179216', label: 'M6 (ค33233)' }
 ]
 
 export const GROUP_OPTIONS: SelectOption[] = [
