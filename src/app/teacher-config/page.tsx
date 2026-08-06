@@ -13,36 +13,32 @@ export default function TeacherConfigPage() {
   const [generatedScript, setGeneratedScript] = useState<string>('')
   const [isRunning, setIsRunning] = useState<boolean>(false)
   const [executionLogs, setExecutionLogs] = useState<string[]>([])
-  const [inputPositions, setInputPositions] = useState<Array<{position: number, enabled: boolean}>>([
-    { position: 1, enabled: true },
-    { position: 11, enabled: true },
-    { position: 15, enabled: false }
-  ])
-  const [checkboxPositions, setCheckboxPositions] = useState<Array<{position: number, enabled: boolean}>>([
-    { position: 1, enabled: true },
-    { position: 10, enabled: true },
-    { position: 20, enabled: false }
-  ])
+  const [scoreColumns, setScoreColumns] = useState(
+    MODE_CONFIG.midterm.columns.map((c) => ({ ...c, enabled: true }))
+  )
 
-  // Apply mode config (targetUrl + positions) to current teacher config and local state
+  // Apply mode config (targetUrl + S columns) to current teacher config and local state
   const applyMode = (newMode: TranscriptMode) => {
     const modeConf = MODE_CONFIG[newMode]
     setConfig(prev => {
       if (!prev) return prev
-      const updated = { ...prev, targetUrl: modeConf.targetUrl, inputPositions: modeConf.inputPositions, checkboxPositions: modeConf.checkboxPositions }
-      updateTeacherConfig(selectedTeacher, { targetUrl: modeConf.targetUrl, inputPositions: modeConf.inputPositions, checkboxPositions: modeConf.checkboxPositions })
+      const updated = {
+        ...prev,
+        targetUrl: modeConf.targetUrl,
+        inputPositions: modeConf.inputPositions,
+        checkboxPositions: modeConf.checkboxPositions
+      }
+      updateTeacherConfig(selectedTeacher, {
+        targetUrl: modeConf.targetUrl,
+        inputPositions: modeConf.inputPositions,
+        checkboxPositions: modeConf.checkboxPositions
+      })
       return updated
     })
-    if (newMode === 'midterm') {
-      setInputPositions([{ position: 1, enabled: true }, { position: 11, enabled: true }, { position: 15, enabled: false }])
-      setCheckboxPositions([{ position: 1, enabled: true }, { position: 10, enabled: true }, { position: 20, enabled: false }])
-    } else {
-      setInputPositions(modeConf.inputPositions.map((position) => ({ position, enabled: true })))
-      setCheckboxPositions(modeConf.checkboxPositions.map((position) => ({ position, enabled: true })))
-    }
+    setScoreColumns(modeConf.columns.map((c) => ({ ...c, enabled: true })))
   }
 
-  // Load teacher config when teacher changes; detect mode from targetUrl and set positions
+  // Load teacher config when teacher changes; detect mode from targetUrl
   useEffect(() => {
     const teacherConfig = getTeacherConfig(selectedTeacher)
     if (teacherConfig) {
@@ -50,14 +46,7 @@ export default function TeacherConfigPage() {
       const isFinals = teacherConfig.targetUrl.includes('Edit-TblTranscripts-Table.aspx') && !teacherConfig.targetUrl.includes('Edit-TblTranscripts1-Table')
       const newMode: TranscriptMode = isFinals ? 'finals' : 'midterm'
       setMode(newMode)
-      if (newMode === 'midterm') {
-        setInputPositions([{ position: 1, enabled: true }, { position: 11, enabled: true }, { position: 15, enabled: false }])
-        setCheckboxPositions([{ position: 1, enabled: true }, { position: 10, enabled: true }, { position: 20, enabled: false }])
-      } else {
-        const modeConf = MODE_CONFIG[newMode]
-        setInputPositions(modeConf.inputPositions.map((position) => ({ position, enabled: true })))
-        setCheckboxPositions(modeConf.checkboxPositions.map((position) => ({ position, enabled: true })))
-      }
+      setScoreColumns(MODE_CONFIG[newMode].columns.map((c) => ({ ...c, enabled: true })))
     }
   }, [selectedTeacher])
 
@@ -99,8 +88,9 @@ export default function TeacherConfigPage() {
   const generateScript = () => {
     if (!config) return
 
-    const activeInputPositions = inputPositions.filter(p => p.enabled).map(p => p.position)
-    const activeCheckboxPositions = checkboxPositions.filter(p => p.enabled).map(p => p.position)
+    const activeColumns = scoreColumns.filter(c => c.enabled)
+    const columnKeys = activeColumns.map(c => c.key)
+    const checkSuffixes = activeColumns.map(c => c.checkSuffix)
 
     const studentData = Object.entries(config.students)
       .map(([id, scores]) => `    "${id}": [${scores.map(s => `"${s}"`).join(', ')}]`)
@@ -120,8 +110,9 @@ USERNAME = "${config.username}"
 PASSWORD = "${config.password}"
 SUBJECT_VALUE = "${config.subjectValue}"
 GROUP_VALUE = "${config.groupValue}"
-input_positions = [${activeInputPositions.join(', ')}]
-checkbox_positions = [${activeCheckboxPositions.join(', ')}]
+# Columns: keys and Check{suffix} ids
+score_keys = [${columnKeys.map(k => `"${k}"`).join(', ')}]
+check_suffixes = [${checkSuffixes.map(s => `"${s}"`).join(', ')}]
 
 students = {
 ${studentData}
@@ -132,238 +123,103 @@ def login(driver, wait):
     print("Starting login process...")
 
     try:
-        # Navigate to login page
         driver.get(LOGIN_URL)
         time.sleep(3)
-        print(f"Current page title: {driver.title}")
-        print(f"Current URL: {driver.current_url}")
-
-        # Find username field by the exact name attribute
         username_field = wait.until(EC.presence_of_element_located((By.NAME, "ctl00$PageContent$UserName")))
-        print("Found username field by exact name")
-
         username_field.clear()
         username_field.send_keys(USERNAME)
-        print(f"Username '{USERNAME}' entered successfully")
-
-        # Find password field by the exact name attribute
         password_field = wait.until(EC.presence_of_element_located((By.NAME, "ctl00$PageContent$Password")))
-        print("Found password field by exact name")
-
         password_field.clear()
         password_field.send_keys(PASSWORD)
-        print(f"Password entered successfully")
-
-        # Wait a moment for fields to be filled
         time.sleep(1)
-
-        # Find and click the "ตกลง" (OK) button
         ok_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(text(), 'ตกลง')] | //a[@title='ตกลง']")))
         ok_button.click()
-        print("ตกลง (OK) button clicked")
-
-        # Wait for login to complete
         time.sleep(3)
-        print("Login completed successfully!")
-
-        # Handle password change prompt if it appears
         try:
-            # Look for the Cancel button in password change prompt
             cancel_button = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[@title='Cancel'] | //a[contains(text(), 'Cancel')]")))
             cancel_button.click()
-            print("Password change prompt dismissed - Cancel button clicked")
             time.sleep(2)
         except:
-            print("No password change prompt found, continuing...")
-
+            pass
     except Exception as e:
         print(f"Login error: {e}")
-        # Take a screenshot for debugging
-        try:
-            driver.save_screenshot("login_error.png")
-            print("Screenshot saved as 'login_error.png'")
-        except:
-            pass
         raise
 
 def select_subject(driver, wait):
-    """Select subject from dropdown and wait for page to load"""
-    print("Selecting subject from dropdown...")
-
-    try:
-        # Find the first select element after "รายวิชา" text
-        subject_dropdown = driver.find_element(By.XPATH, "//text()[contains(., 'รายวิชา')]/following::select[1]")
-
-        # Create Select object and select the subject
-        select = Select(subject_dropdown)
-        select.select_by_value(SUBJECT_VALUE)
-        print(f"Selected subject with value: {SUBJECT_VALUE}")
-
-        # Wait for page to reload after selection
-        time.sleep(3)
-        print("Subject selection completed")
-
-    except Exception as e:
-        print(f"Error selecting subject: {e}")
-        raise
+    subject_dropdown = driver.find_element(By.XPATH, "//text()[contains(., 'รายวิชา')]/following::select[1]")
+    Select(subject_dropdown).select_by_value(SUBJECT_VALUE)
+    time.sleep(3)
 
 def select_group(driver, wait):
-    """Select group from dropdown and wait for page to load"""
-    print("Selecting group from dropdown...")
-
-    try:
-        # Find the group dropdown by its exact name attribute
-        group_dropdown = wait.until(EC.presence_of_element_located((By.NAME, "ctl00$PageContent$ClassSectionNoFilter")))
-
-        # Create Select object and select the group
-        select = Select(group_dropdown)
-        select.select_by_value(GROUP_VALUE)
-        print(f"Selected group with value: {GROUP_VALUE}")
-
-        # Wait for page to reload after selection
-        time.sleep(3)
-        print("Group selection completed")
-
-    except Exception as e:
-        print(f"Error selecting group: {e}")
-        raise
+    group_dropdown = wait.until(EC.presence_of_element_located((By.NAME, "ctl00$PageContent$ClassSectionNoFilter")))
+    Select(group_dropdown).select_by_value(GROUP_VALUE)
+    time.sleep(3)
 
 def click_first_input_before_page(driver, wait):
-    """Click the first input before 'หน้า' text and type 25"""
-    print("Clicking first input before 'หน้า' and typing 25...")
-
-    try:
-        # Find the first input element before "หน้า" text
-        first_input = driver.find_element(By.XPATH, "//text()[contains(., 'หน้า')]/preceding::input[1]")
-
-        # Scroll to input if needed
-        driver.execute_script("arguments[0].scrollIntoView(true);", first_input)
-        time.sleep(0.5)
-
-        # Click the input and type 25
-        first_input.click()
-        first_input.clear()
-        first_input.send_keys("25")
-        print("Typed 25 in first input before 'หน้า'")
-        time.sleep(0.5)
-
-    except Exception as e:
-        print(f"Error clicking first input before 'หน้า': {e}")
-        raise
+    first_input = driver.find_element(By.XPATH, "//text()[contains(., 'หน้า')]/preceding::input[1]")
+    driver.execute_script("arguments[0].scrollIntoView(true);", first_input)
+    first_input.click()
+    first_input.clear()
+    first_input.send_keys("25")
+    time.sleep(0.5)
 
 def click_page_button(driver, wait):
-    """Click the 'หน้า' button"""
-    print("Clicking 'หน้า' button...")
-
-    try:
-        # Find and click the button with text "หน้า"
-        page_button = driver.find_element(By.XPATH, "//a[contains(text(), 'หน้า')]")
-
-        # Scroll to button if needed
-        driver.execute_script("arguments[0].scrollIntoView(true);", page_button)
-        time.sleep(0.5)
-
-        # Click the button
-        page_button.click()
-        print("Clicked 'หน้า' button")
-        time.sleep(3)  # Wait for page action to complete
-
-    except Exception as e:
-        print(f"Error clicking 'หน้า' button: {e}")
-        raise
+    page_button = driver.find_element(By.XPATH, "//a[contains(text(), 'หน้า')]")
+    driver.execute_script("arguments[0].scrollIntoView(true);", page_button)
+    page_button.click()
+    time.sleep(3)
 
 def click_checkboxes(driver):
-    """Click the required checkboxes before editing scores"""
-    print("Clicking required checkboxes...")
-
-    for position in checkbox_positions:
+    print("Clicking column checkboxes...")
+    for suffix in check_suffixes:
         try:
-            # Find checkbox by position (nth checkbox on the page)
-            checkbox = driver.find_element(By.XPATH, f"(//input[@type='checkbox'])[{position}]")
-
-            # Scroll to checkbox if needed
-            driver.execute_script("arguments[0].scrollIntoView(true);", checkbox)
+            checkbox = driver.find_element(By.ID, f"ctl00_PageContent_Check{suffix}")
+            driver.execute_script("arguments[0].removeAttribute('disabled'); arguments[0].scrollIntoView(true);", checkbox)
+            time.sleep(0.3)
+            if not checkbox.is_selected():
+                checkbox.click()
+            print(f"Clicked Check{suffix}")
             time.sleep(0.5)
-
-            # Click the checkbox
-            checkbox.click()
-            print(f"Clicked checkbox {position}")
-            time.sleep(0.5)
-
         except Exception as e:
-            print(f"Error clicking checkbox {position}: {e}")
+            print(f"Error clicking Check{suffix}: {e}")
 
 def save_transcripts(driver, wait):
-    """Click the save button to save all transcript changes"""
-    print("Saving all transcript changes...")
+    save_button = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_PageContent_TblTranscriptsSaveButton")))
+    driver.execute_script("arguments[0].scrollIntoView(true);", save_button)
+    save_button.click()
+    time.sleep(5)
 
-    try:
-        # Find and click the save button by its ID
-        save_button = wait.until(EC.element_to_be_clickable((By.ID, "ctl00_PageContent_TblTranscriptsSaveButton")))
-
-        # Scroll to save button if needed
-        driver.execute_script("arguments[0].scrollIntoView(true);", save_button)
-        time.sleep(0.5)
-
-        # Click the save button
-        save_button.click()
-        print("Save button clicked")
-
-        # Wait for save operation to complete
-        time.sleep(5)
-        print("Transcripts saved successfully!")
-
-    except Exception as e:
-        print(f"Error saving transcripts: {e}")
-        raise
-
-# Main execution
 driver = webdriver.Chrome()
 wait = WebDriverWait(driver, 10)
 
 try:
-    # Login first
     login(driver, wait)
-
-    # Navigate to target page
-    print(f"Navigating to target page: {TARGET_URL}")
     driver.get(TARGET_URL)
     time.sleep(3)
-
-    # Select subject from dropdown
     select_subject(driver, wait)
-
-    # Select group from dropdown
     select_group(driver, wait)
-
-    # Click first input before "หน้า" and type 25
     click_first_input_before_page(driver, wait)
-
-    # Click "หน้า" button
     click_page_button(driver, wait)
-
-    # Click required checkboxes first
     click_checkboxes(driver)
 
-    # Process students
     for student_id, scores in students.items():
         print(f"Processing student {student_id}")
-        for i, pos in enumerate(input_positions):
+        for i, key in enumerate(score_keys):
             try:
-                xpath = f"//td[contains(text(), '{student_id}')]/following::input[{pos}]"
-                input_elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+                xpath = f"//td[contains(text(), '{student_id}')]/ancestor::tr[1]//input[contains(@name, '{key}') or contains(@id, '{key}')]"
+                inputs = driver.find_elements(By.XPATH, xpath)
+                if not inputs:
+                    continue
+                input_elem = inputs[0]
                 input_elem.clear()
                 input_elem.send_keys(scores[i])
-                print(f"  Filled position {pos} with {scores[i]}")
+                print(f"  Filled {key} with {scores[i]}")
             except Exception as e:
-                print(f"  Error at position {pos}: {e}")
+                print(f"  Error at {key}: {e}")
         time.sleep(1)
 
-    # Save all changes
     save_transcripts(driver, wait)
-
     print("All students processed and saved successfully!")
-
 except Exception as e:
     print(f"Error: {e}")
 finally:
@@ -375,22 +231,15 @@ finally:
   const run = async () => {
     if (!config) return
 
-    // Validate before running
-    const activeInputPositions = inputPositions.filter(p => p.enabled)
-    const activeCheckboxPositions = checkboxPositions.filter(p => p.enabled)
+    const activeColumns = scoreColumns.filter(c => c.enabled)
 
     if (Object.keys(config.students).length === 0) {
       alert('❌ No student data found. Please add student data first!')
       return
     }
 
-    if (activeInputPositions.length === 0) {
-      alert('❌ No input positions selected. Please enable at least one input position!')
-      return
-    }
-
-    if (activeCheckboxPositions.length === 0) {
-      alert('❌ No checkbox positions selected. Please enable at least one checkbox position!')
+    if (activeColumns.length === 0) {
+      alert('❌ No score columns selected. Please enable at least one column!')
       return
     }
 
@@ -408,9 +257,6 @@ finally:
     setExecutionLogs(['Starting script execution...'])
 
     try {
-      const activeInputPos = activeInputPositions.map(p => p.position)
-      const activeCheckboxPos = activeCheckboxPositions.map(p => p.position)
-
       const scriptConfig = {
         loginUrl: config.loginUrl,
         targetUrl: config.targetUrl,
@@ -418,8 +264,10 @@ finally:
         password: config.password,
         subjectValue: config.subjectValue,
         groupValue: config.groupValue,
-        inputPositions: activeInputPos,
-        checkboxPositions: activeCheckboxPos,
+        mode,
+        scoreColumns: activeColumns.map(c => ({ key: c.key, checkSuffix: c.checkSuffix, label: c.label })),
+        inputPositions: config.inputPositions,
+        checkboxPositions: config.checkboxPositions,
         students: config.students
       }
 
@@ -506,7 +354,9 @@ finally:
               />
             </div>
             <p className="text-sm text-gray-500 mt-2">
-              {mode === 'midterm' ? 'Midterm: target Edit-TblTranscripts1, inputs 1 & 11, checkboxes 1 & 10.' : 'Finals: target Edit-TblTranscripts (no "1"), inputs and checkboxes 5, 6, 8.'}
+              {mode === 'midterm'
+                ? 'Midterm: Edit-TblTranscripts1 — check & fill S1 (30) and Midterm/กลางภาค (20).'
+                : 'Finals: Edit-TblTranscripts — check & fill S10 (20), S11 (10), and Final/ปลายภาค (20).'}
             </p>
           </Card.Body>
         </Card>
@@ -557,82 +407,34 @@ finally:
           </Card.Body>
         </Card>
 
-        {/* Input Positions */}
+        {/* Score Columns (check header + fill cells) */}
         <Card className="mb-6">
           <Card.Body>
-            <h3 className="text-lg font-semibold mb-4">📝 Input Positions to Fill</h3>
+            <h3 className="text-lg font-semibold mb-4">📝 Score Columns to Check & Fill</h3>
+            <p className="text-sm text-gray-500 mb-4">
+              {mode === 'midterm'
+                ? 'Midterm uses S1 (30) and Midterm/กลางภาค (20).'
+                : 'Finals uses S10, S11, and Final/ปลายภาค (shown as 20, 10, 20).'}
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {inputPositions.map((pos, index) => (
-                <div key={index} className="flex items-center gap-3">
+              {scoreColumns.map((col, index) => (
+                <div key={col.key} className="flex items-center gap-3 p-3 border border-gray-200 rounded-md bg-gray-50">
                   <input
                     type="checkbox"
-                    checked={pos.enabled}
+                    checked={col.enabled}
                     onChange={(e) => {
-                      const newPositions = [...inputPositions]
-                      newPositions[index].enabled = e.target.checked
-                      setInputPositions(newPositions)
-
-                      const activePositions = newPositions.filter(p => p.enabled).map(p => p.position)
-                      updateTeacherConfig(selectedTeacher, { inputPositions: activePositions })
+                      const next = [...scoreColumns]
+                      next[index] = { ...next[index], enabled: e.target.checked }
+                      setScoreColumns(next)
+                      const active = next.filter(c => c.enabled).map(c => parseInt(c.checkSuffix, 10)).filter(n => !Number.isNaN(n))
+                      updateTeacherConfig(selectedTeacher, { inputPositions: active, checkboxPositions: active })
                     }}
                     className="w-4 h-4"
                   />
-                  <label className="text-sm font-medium">Position</label>
-                  <Input
-                    type="number"
-                    value={pos.position.toString()}
-                    onChange={(value) => {
-                      const newPositions = [...inputPositions]
-                      newPositions[index].position = parseInt(value) || 1
-                      setInputPositions(newPositions)
-
-                      const activePositions = newPositions.filter(p => p.enabled).map(p => p.position)
-                      updateTeacherConfig(selectedTeacher, { inputPositions: activePositions })
-                    }}
-                    className="w-20"
-                    min="1"
-                  />
-                </div>
-              ))}
-            </div>
-          </Card.Body>
-        </Card>
-
-        {/* Checkbox Positions */}
-        <Card className="mb-6">
-          <Card.Body>
-            <h3 className="text-lg font-semibold mb-4">☑️ Checkbox Positions to Click</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {checkboxPositions.map((pos, index) => (
-                <div key={index} className="flex items-center gap-3">
-                  <input
-                    type="checkbox"
-                    checked={pos.enabled}
-                    onChange={(e) => {
-                      const newPositions = [...checkboxPositions]
-                      newPositions[index].enabled = e.target.checked
-                      setCheckboxPositions(newPositions)
-
-                      const activePositions = newPositions.filter(p => p.enabled).map(p => p.position)
-                      updateTeacherConfig(selectedTeacher, { checkboxPositions: activePositions })
-                    }}
-                    className="w-4 h-4"
-                  />
-                  <label className="text-sm font-medium">Position</label>
-                  <Input
-                    type="number"
-                    value={pos.position.toString()}
-                    onChange={(value) => {
-                      const newPositions = [...checkboxPositions]
-                      newPositions[index].position = parseInt(value) || 1
-                      setCheckboxPositions(newPositions)
-
-                      const activePositions = newPositions.filter(p => p.enabled).map(p => p.position)
-                      updateTeacherConfig(selectedTeacher, { checkboxPositions: activePositions })
-                    }}
-                    className="w-20"
-                    min="1"
-                  />
+                  <div>
+                    <div className="text-sm font-semibold">{col.label}</div>
+                    <div className="text-xs text-gray-500">{col.key} (Check{col.checkSuffix})</div>
+                  </div>
                 </div>
               ))}
             </div>
@@ -660,7 +462,11 @@ finally:
                 }}
                 className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
-              <p className="text-xs text-gray-500 mt-1">Format: StudentID [Tab] Score1 [Tab] Score2 [Tab] Score3 (optional)</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {mode === 'midterm'
+                  ? 'Format: StudentID [Tab] 30-score [Tab] 20-score  (S1 then Midterm/กลางภาค)'
+                  : 'Format: StudentID [Tab] 20-score [Tab] 10-score [Tab] 20-score  (S10, S11, Final)'}
+              </p>
             </div>
             <Textarea
               label="Student Data (or paste here)"
@@ -668,7 +474,9 @@ finally:
                 `${id}\t${scores.join('\t')}`
               ).join('\n')}
               onChange={handleStudentDataChange}
-              placeholder="Paste student data here or import from file&#10;Format:&#10;51706	24	5&#10;51707	25	6"
+              placeholder={mode === 'midterm'
+                ? '51706\t24\t5\n51707\t25\t6'
+                : '51706\t18\t8\t15'}
               rows={20}
             />
           </Card.Body>

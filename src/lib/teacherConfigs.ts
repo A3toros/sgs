@@ -1,4 +1,4 @@
-import { TeacherConfig, SelectOption } from '@/types'
+import { TeacherConfig, SelectOption, ScoreColumn } from '@/types'
 
 export const TEACHER_CONFIGS: TeacherConfig[] = [
   {
@@ -8,10 +8,10 @@ export const TEACHER_CONFIGS: TeacherConfig[] = [
     targetUrl: 'https://sgs.bopp-obec.info/sgs/TblTranscripts/Edit-TblTranscripts1-Table.aspx',
     username: '1010335002949',
     password: '15102523',
-    subjectValue: '8793865',
+    subjectValue: '9193949',
     groupValue: '15',
-    inputPositions: [1, 11],
-    checkboxPositions: [1, 10],
+    inputPositions: [1],
+    checkboxPositions: [1],
     students: {
       "51706": ["24", "5"],
       "51707": ["25", "6"],
@@ -47,19 +47,20 @@ export const TEACHER_CONFIGS: TeacherConfig[] = [
     password: 'Pavel1no24',
     subjectValue: '8735440',
     groupValue: '15',
-    inputPositions: [1, 11],
-    checkboxPositions: [1, 10],
+    inputPositions: [1],
+    checkboxPositions: [1],
     students: {}
   }
 ]
 
 export const ALEX_SUBJECTS: SelectOption[] = [
-  { value: '8793865', label: 'อ21232 ภาษาอังกฤษฟัง-พูด 2 ม.1' },
-  { value: '8794298', label: 'อ22232 ภาษาอังกฤษฟัง-พูด 4 ม.2' },
-  { value: '8794396', label: 'อ23204 ภาษาอังกฤษฟัง-พูด 6 ม.3' },
-  { value: '8794533', label: 'อ31238 ภาษาอังกฤษเพื่อการอาชีพ 2 ม.4' },
-  { value: '8794852', label: 'อ32238 ภาษาอังกฤษเพื่อการอาชีพ 4 ม.5' },
-  { value: '8794987', label: 'อ30218 ภาษาอังกฤษเพื่อการอาชีพ ม.6' }
+  { value: '9193949', label: 'M1 Eng for Comm (อ21235)' },
+  { value: '9175319', label: 'M2 Eng for Present (I22201)' },
+  { value: '9200342', label: 'M4 Grammar (อ31131)' },
+  { value: '9200409', label: 'M4 L&S (อ31231)' },
+  { value: '9200423', label: 'M4 Career (อ31237)' },
+  { value: '9199298', label: 'M5 Career (อ32237)' },
+  { value: '9200051', label: 'M6 Career (อ33237)' }
 ]
 
 export const JAY_SUBJECTS: SelectOption[] = [
@@ -87,16 +88,32 @@ export const MODE_OPTIONS: SelectOption[] = [
   { value: 'finals', label: 'Finals' }
 ]
 
-export const MODE_CONFIG: Record<TranscriptMode, { targetUrl: string; inputPositions: number[]; checkboxPositions: number[] }> = {
+export const MODE_CONFIG: Record<TranscriptMode, {
+  targetUrl: string
+  columns: ScoreColumn[]
+  inputPositions: number[]
+  checkboxPositions: number[]
+}> = {
   midterm: {
+    // Midterm page: S1 (30) and Midterm/กลางภาค (20)
     targetUrl: `${BASE_SGS_URL}/TblTranscripts/Edit-TblTranscripts1-Table.aspx`,
-    inputPositions: [1, 11],
-    checkboxPositions: [1, 10]
+    columns: [
+      { key: 'S1', label: '30', checkSuffix: '1' },
+      { key: 'Midterm', label: '20', checkSuffix: 'M' }
+    ],
+    inputPositions: [1],
+    checkboxPositions: [1]
   },
   finals: {
+    // Finals page: S10 (20), S11 (10), Final/ปลายภาค (20)
     targetUrl: `${BASE_SGS_URL}/TblTranscripts/Edit-TblTranscripts-Table.aspx`,
-    inputPositions: [5, 6, 8],
-    checkboxPositions: [5, 6, 8]
+    columns: [
+      { key: 'S10', label: '20', checkSuffix: '10' },
+      { key: 'S11', label: '10', checkSuffix: '11' },
+      { key: 'Final', label: '20', checkSuffix: 'F' }
+    ],
+    inputPositions: [10, 11],
+    checkboxPositions: [10, 11]
   }
 }
 

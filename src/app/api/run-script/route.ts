@@ -6,6 +6,12 @@ import path from 'path'
 
 const execAsync = promisify(exec)
 
+interface ScoreColumnPayload {
+  key: string
+  checkSuffix: string
+  label?: string
+}
+
 interface ScriptConfig {
   loginUrl: string
   targetUrl: string
@@ -13,9 +19,24 @@ interface ScriptConfig {
   password: string
   subjectValue: string
   groupValue: string
+  scoreColumns?: ScoreColumnPayload[] | number[]
   inputPositions: number[]
   checkboxPositions: number[]
   students: { [studentId: string]: string[] }
+}
+
+function normalizeColumns(config: ScriptConfig): ScoreColumnPayload[] {
+  if (Array.isArray(config.scoreColumns) && config.scoreColumns.length > 0) {
+    if (typeof config.scoreColumns[0] === 'number') {
+      return (config.scoreColumns as number[]).map((n) => ({
+        key: `S${n}`,
+        checkSuffix: String(n)
+      }))
+    }
+    return config.scoreColumns as ScoreColumnPayload[]
+  }
+  const nums = config.checkboxPositions?.length ? config.checkboxPositions : config.inputPositions
+  return (nums || []).map((n) => ({ key: `S${n}`, checkSuffix: String(n) }))
 }
 
 export async function POST(request: NextRequest) {
@@ -39,8 +60,9 @@ export async function POST(request: NextRequest) {
     addLog('Starting script execution...')
 
     // Generate Python script
-    const activeInputPositions = config.inputPositions
-    const activeCheckboxPositions = config.checkboxPositions
+    const columns = normalizeColumns(config)
+    const columnKeys = columns.map(c => c.key)
+    const checkSuffixes = columns.map(c => c.checkSuffix)
 
     const studentData = Object.entries(config.students)
       .map(([id, scores]) => `    "${id}": [${scores.map(s => `"${s}"`).join(', ')}]`)
@@ -61,8 +83,8 @@ USERNAME = "${config.username}"
 PASSWORD = "${config.password}"
 SUBJECT_VALUE = "${config.subjectValue}"
 GROUP_VALUE = "${config.groupValue}"
-input_positions = [${activeInputPositions.join(', ')}]
-checkbox_positions = [${activeCheckboxPositions.join(', ')}]
+score_keys = [${columnKeys.map(k => `"${k}"`).join(', ')}]
+check_suffixes = [${checkSuffixes.map(s => `"${s}"`).join(', ')}]
 
 students = {
 ${studentData}
@@ -214,25 +236,20 @@ def click_page_button(driver, wait):
         raise
 
 def click_checkboxes(driver):
-    """Click the required checkboxes before editing scores"""
-    print("Clicking required checkboxes...")
+    """Click header checkboxes Check{suffix} for each score column"""
+    print("Clicking required column checkboxes...")
     
-    for position in checkbox_positions:
+    for suffix in check_suffixes:
         try:
-            # Find checkbox by position (nth checkbox on the page)
-            checkbox = driver.find_element(By.XPATH, f"(//input[@type='checkbox'])[{position}]")
-            
-            # Scroll to checkbox if needed
-            driver.execute_script("arguments[0].scrollIntoView(true);", checkbox)
+            checkbox = driver.find_element(By.ID, f"ctl00_PageContent_Check{suffix}")
+            driver.execute_script("arguments[0].removeAttribute('disabled'); arguments[0].scrollIntoView(true);", checkbox)
+            time.sleep(0.3)
+            if not checkbox.is_selected():
+                checkbox.click()
+            print(f"Clicked Check{suffix}")
             time.sleep(0.5)
-            
-            # Click the checkbox
-            checkbox.click()
-            print(f"Clicked checkbox {position}")
-            time.sleep(0.5)
-            
         except Exception as e:
-            print(f"Error clicking checkbox {position}: {e}")
+            print(f"Error clicking Check{suffix}: {e}")
 
 def save_transcripts(driver, wait):
     """Click the save button to save all transcript changes"""
@@ -286,18 +303,24 @@ try:
     # Click required checkboxes first
     click_checkboxes(driver)
     
-    # Process students
+    # Process students — fill column inputs by key (S10, S11, Final, etc.)
     for student_id, scores in students.items():
         print(f"Processing student {student_id}")
-        for i, pos in enumerate(input_positions):
+        for i, key in enumerate(score_keys):
             try:
-                xpath = f"//td[contains(text(), '{student_id}')]/following::input[{pos}]"
-                input_elem = wait.until(EC.presence_of_element_located((By.XPATH, xpath)))
+                xpath = f"//td[contains(text(), '{student_id}')]/ancestor::tr[1]//input[contains(@name, '{key}') or contains(@id, '{key}')]"
+                inputs = driver.find_elements(By.XPATH, xpath)
+                inputs = [el for el in inputs if el.get_attribute('type') not in ('checkbox', 'hidden')]
+                if not inputs:
+                    print(f"  Could not find {key} input")
+                    continue
+                input_elem = inputs[0]
+                driver.execute_script("arguments[0].removeAttribute('disabled');", input_elem)
                 input_elem.clear()
                 input_elem.send_keys(scores[i])
-                print(f"  Filled position {pos} with {scores[i]}")
+                print(f"  Filled {key} with {scores[i]}")
             except Exception as e:
-                print(f"  Error at position {pos}: {e}")
+                print(f"  Error at {key}: {e}")
         time.sleep(1)
     
     # Save all changes

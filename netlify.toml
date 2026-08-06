@@ -9,13 +9,5 @@
   directory = "netlify/functions"
   node_bundler = "esbuild"
 
-# Redirect all paths to index.html for SPAs, but exclude Netlify function paths
-[[redirects]]
-  from = "/.netlify/functions/*"
-  to = "/.netlify/functions/:splat"
-  status = 200
-
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Do not add redirects for /.netlify/* — Netlify serves functions automatically.
+# Next.js handles its own routing under netlify dev / the Next plugin.
